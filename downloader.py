@@ -1,4 +1,4 @@
-import logging, traceback, re, subprocess
+import logging, traceback, re, subprocess, os, tempfile
 import requests # 3rd party librart
 from secrets import token_hex
 from shutil import which
@@ -35,11 +35,15 @@ class Downloader:
                  user_agent: str,
                  retry_wait_time: int,
                  tasks: list,
-                 simultaneous_transfers: int):
+                 simultaneous_transfers: int,
+                 file_limit: Optional[int] = None,
+                 initial_file: Optional[str] = None):
         self.skippedTasks = 0
         self.completedTasks = 0
         self.user_agent = user_agent
         self.retry_wait_time = retry_wait_time
+        self.file_limit = file_limit
+        self.initial_file = initial_file
         self.headers = {
             "User-Agent": user_agent
         }      
@@ -83,7 +87,6 @@ class Downloader:
                         payload["__EVENTARGUMENT"] = ""
                         payload["txtPassword"] = task["password"]
                         logging.debug(f"Password submit url: {passwordSubmitUrl}")
-                        # logging.debug(f"Password submit payload: {payload}")
                         response = session.post(passwordSubmitUrl, headers=self.headers, data=payload, timeout=20)
                         if response.status_code == 429:
                             raise RateLimitException()
@@ -112,13 +115,118 @@ class Downloader:
                     f.write(f"url = {webdavEndpoint}\n")
                     f.write("vendor = other\n")
                     f.write(f"headers = Cookie,FedAuth={cookies['FedAuth']}")
-                rclone = subprocess.run([which("rclone"), "--config", "sharepoint_rclone.conf", "copy", "--progress", "--transfers", str(self.simultaneous_transfers), "webdav:", task['downloadTo']])
-                if rclone.returncode != 0:
-                    logging.info(f"rclone exited with status code {rclone.returncode} which indicates an error, sleep for {self.retry_wait_time} seconds")
-                    sleep(self.retry_wait_time)
-                else:
-                    self.completedTasks += 1
+                
+                # Create temp directory for list files
+                temp_dir = tempfile.mkdtemp()
+                files_list_path = os.path.join(temp_dir, "files_list.txt")
+                batch_list_path = os.path.join(temp_dir, "batch_files.txt")
+                
+                # List all available files
+                logging.info("Listing all available files...")
+                list_cmd = [
+                    which("rclone"), 
+                    "--config", "sharepoint_rclone.conf",
+                    "lsf", 
+                    "--files-only",
+                    "webdav:"
+                ]
+                
+                with open(files_list_path, "w", encoding="utf-8") as f:
+                    subprocess.run(list_cmd, stdout=f)
+                
+                # Check if there are files to download
+                if os.path.getsize(files_list_path) == 0:
+                    logging.info("No files found for download")
                     taskIndex += 1
+                    continue
+                
+                # Count total files
+                with open(files_list_path, "r", encoding="utf-8") as f:
+                    total_files = sum(1 for _ in f)
+                
+                logging.info(f"Total files found: {total_files}")
+                
+                # Read file list
+                with open(files_list_path, "r", encoding="utf-8") as f:
+                    file_lines = f.readlines()
+                
+                # Find starting point based on initial file
+                start_index = 0
+                if self.initial_file:
+                    logging.info(f"Looking for initial file: {self.initial_file}")
+                    for i, line in enumerate(file_lines):
+                        if self.initial_file in line:
+                            start_index = i
+                            logging.info(f"Starting from file at index {start_index}: {line.strip()}")
+                            break
+                    if start_index == 0 and self.initial_file:
+                        logging.warning(f"Initial file '{self.initial_file}' not found, starting from the beginning")
+                
+                # Use slice from start_index
+                file_lines = file_lines[start_index:]
+                
+                # Determine how many files to download after finding starting point
+                remaining_files = len(file_lines)
+                files_to_download = min(remaining_files, self.file_limit) if self.file_limit else remaining_files
+                
+                logging.info(f"Planning to download {files_to_download} files starting from index {start_index}")
+                
+                # If there's a file limit, truncate the list
+                if self.file_limit:
+                    file_lines = file_lines[:self.file_limit]
+                
+                # Start download in batches
+                downloaded_count = 0
+                
+                # Process in batches
+                batch_size = 100  # Batch size, can be adjusted as needed
+                
+                for i in range(0, len(file_lines), batch_size):
+                    if downloaded_count >= files_to_download:
+                        break
+                    
+                    # Create batch file
+                    batch = file_lines[i:min(i+batch_size, len(file_lines))]
+                    with open(batch_list_path, "w", encoding="utf-8") as f:
+                        f.writelines(batch)
+                    
+                    # Download the batch
+                    current_batch_size = len(batch)
+                    logging.info(f"Downloading batch of {current_batch_size} files ({downloaded_count+1}-{downloaded_count+current_batch_size} of {files_to_download})")
+                    
+                    copy_cmd = [
+                        which("rclone"),
+                        "--config", "sharepoint_rclone.conf",
+                        "copy",
+                        "--progress",
+                        "--transfers", str(self.simultaneous_transfers),
+                        "--files-from-raw", batch_list_path,
+                        "webdav:",
+                        task['downloadTo']
+                    ]
+                    
+                    rclone = subprocess.run(copy_cmd)
+                    
+                    if rclone.returncode != 0:
+                        logging.info(f"rclone exited with status code {rclone.returncode} which indicates an error, sleep for {self.retry_wait_time} seconds")
+                        sleep(self.retry_wait_time)
+                        # Continue with next batch even if there's an error
+                    
+                    downloaded_count += current_batch_size
+                    logging.info(f"Progress: {downloaded_count}/{files_to_download} files downloaded")
+                
+                # Clean up temporary files
+                try:
+                    os.remove(files_list_path)
+                    os.remove(batch_list_path)
+                    os.rmdir(temp_dir)
+                except:
+                    logging.debug("Could not remove temporary files")
+                
+                logging.info(f"Download completed for task {taskIndex + 1}")
+                self.completedTasks += 1
+                taskIndex += 1
+                
             except PasswordRequiredException:
                 logging.info("Password is required but no password is given, skip to next task.")
                 taskIndex += 1

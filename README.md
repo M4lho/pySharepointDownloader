@@ -1,25 +1,33 @@
 # pySharepointDownloader
 
-A script that utilizes rclone to download sharepoint links you received.
+A script that utilizes rclone to download sharepoint links you received. Ever got a sharepoint folder link that has hundreds of files that each is 1GB each, and the zip download button is useless? This script is for you.
 
-Ever got a sharepoint folder link that has hundered of files that each is 1GB each, and the zip download button is useless? This script is for you
+## New Features in This Fork
 
----
+This fork adds the following improvements:
+- Choose which file to start downloading from
+- Limit the number of files to download
+- Perfect for large folders where you only need a subset of files
 
-Requirement:
+## Requirements
+1. [Python3](https://www.python.org/downloads/) (3.8 and later should be OK, but 3.11 was used when developing this script)
+2. [rclone](https://rclone.org/) (Must be available at PATH, or on Windows put it in pySharepointDownloader folder)
 
-1. [Python3](https://www.python.org/downloads/) (I think 3.8 and later should be OK, but I use 3.11 when developing this script)
+## Usage
+1. [Download](https://github.com/M4lho/pySharepointDownloader/archive/refs/heads/main.zip) and extract pySharepointDownloader
+2. Use a text editor (like Notepad) to edit config.py
+3. If you are a Windows user, click "run.bat"
+4. If you are a Linux user, use run.sh (Might work for other Unix file systems but not tested)
 
-2. [rclone](https://rclone.org/) (Must be available at PATH, or on Windows put it in pySharepointDownloader folder) (This program is awesome)
+## Configuration Options
 
----
+In config.py, you can now set:
 
-Usage:
+```python
+# Limit of files to download, set to None to download all files
+# Example: file_limit = 200 to download only 200 files
+file_limit = None
 
-1. [Download](https://github.com/axzxc1236/pySharepointDownloader/archive/refs/heads/main.zip) and extract pySharepointDownloader
-
-2. Use textfile editor (Notepad) to edit config.py
-
-3. If you are Windows user, click "run.bat"
-
-4. If you are Linux user, use run.sh (Might work for other Unix file systems but I didn't test)
+# Initial file to start downloading from (set to None to start from the beginning)
+# Example: initial_file = "Example" to start downloading from a file named "Example"
+initial_file = None

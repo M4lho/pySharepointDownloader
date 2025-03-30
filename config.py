@@ -13,7 +13,14 @@ retry_wait_time = 300
 
 # How many files does downloader download at the same time
 # 2 connections already saturated my connections at 500Mbps Internet
-simultaneous_transfers = 2
+simultaneous_transfers = 3
+
+# Limit of files to download, set to None to download all files
+# Example: file_limit = 200 to download only 200 files
+file_limit = None
+
+# Initial file to start downloading from (set to None to start from the beginning)
+# Example: initial_file = "Example" to start downloading from a file named "Example"
 
 """
     How to configure tasks:
@@ -54,4 +61,5 @@ tasks = [
 """
 # Above is configuration example, you want to modify texts below!
 
-tasks = []
+tasks = [
+]

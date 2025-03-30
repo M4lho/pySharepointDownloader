@@ -26,7 +26,9 @@ downloader = Downloader(
     user_agent = config.user_agent,
     retry_wait_time = config.retry_wait_time,
     tasks = config.tasks,
-    simultaneous_transfers = config.simultaneous_transfers
+    simultaneous_transfers = config.simultaneous_transfers,
+    file_limit = config.file_limit,
+    initial_file = config.initial_file if hasattr(config, 'initial_file') else None
 )
 
 downloader.run()
